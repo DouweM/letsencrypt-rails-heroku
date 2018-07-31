@@ -7,7 +7,6 @@ module Letsencrypt
 
     def call(env)
       if env["PATH_INFO"].include?(".well-known/acme-challenge")
-        puts env["PATH_INFO"].inspect
         acme_challenge_filename = env["PATH_INFO"]
         acme_challenge_filename[0] = ""
         if Letsencrypt.challenge_configured?(acme_challenge_filename)

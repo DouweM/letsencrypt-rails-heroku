@@ -9,13 +9,8 @@ module Letsencrypt
   end
 
   def self.challenge_configured?(acme_challenge_filename)
-    puts acme_challenge_filename.inspect
-    puts configuration.acme_challenges.class
-    puts configuration.acme_challenges.inspect
-    puts configuration.acme_challenges.is_a?(Hash)
-    puts configuration.acme_challenges.key?(acme_challenge_filename)
-    configuration.acme_challenges.is_a?(Hash) &&
-      configuration.acme_challenges.key?(acme_challenge_filename)
+    return false unless configuration.acme_challenges.is_a?(Hash)
+    configuration.acme_challenges.key?(acme_challenge_filename)
   end
 
   class Configuration
@@ -32,7 +27,11 @@ module Letsencrypt
       @acme_domain = ENV["ACME_DOMAIN"]
       @acme_endpoint = ENV["ACME_ENDPOINT"] || 'https://acme-v01.api.letsencrypt.org/'
       @ssl_type = ENV["SSL_TYPE"] || 'sni'
-      @acme_challenges = ENV["ACME_CHALLENGES"] ? JSON.parse(ENV["ACME_CHALLENGES"]) : nil
+      @acme_challenges = begin
+          JSON.parse(ENV["ACME_CHALLENGES"]) if ENV["ACME_CHALLENGES"]
+        rescue JSON::ParserError
+          nil
+        end
     end
 
     def valid?
