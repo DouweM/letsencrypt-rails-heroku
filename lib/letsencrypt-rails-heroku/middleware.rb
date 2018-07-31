@@ -6,8 +6,12 @@ module Letsencrypt
     end
 
     def call(env)
-      if Letsencrypt.challenge_configured? && env["PATH_INFO"] == "/#{Letsencrypt.configuration.acme_challenge_filename}"
-        return [200, {"Content-Type" => "text/plain"}, [Letsencrypt.configuration.acme_challenge_file_content]]
+      if env["PATH_INFO"].include?(".well-known/acme-challenge")
+        acme_challenge_filename = env["PATH_INFO"]
+        acme_challenge_filename[0] = ""
+        if Letsencrypt.challenge_configured?(acme_challenge_filename)
+          return [200, {"Content-Type" => "text/plain"}, [Letsencrypt.configuration.acme_challenges[acme_challenge_filename]]]
+        end
       end
 
       @app.call(env)

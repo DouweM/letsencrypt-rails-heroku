@@ -36,32 +36,40 @@ namespace :letsencrypt do
       puts "Using #{domains.length} configured Heroku domain(s) for this app..."
     end
 
-    domains.each do |domain|
-      puts "Performing verification for #{domain}:"
+    # challenge objects to verify status
+    challenges = {}
 
+    # acme challenge filename(Key) and content(Value)
+    acme_challenges = {}
+
+    domains.each do |domain|
       authorization = client.authorize(domain: domain)
       challenge = authorization.http01
 
-      print "Setting config vars on Heroku..."
-      heroku.config_var.update(heroku_app, {
-        'ACME_CHALLENGE_FILENAME' => challenge.filename,
-        'ACME_CHALLENGE_FILE_CONTENT' => challenge.file_content
-      })
-      puts "Done!"
+      acme_challenges["#{challenge.filename}"] = challenge.file_content
+      challenges["#{challenge.filename}"] = challenge
+    end
 
-      # Wait for app to come up
-      print "Testing filename works (to bring up app)..."
+    print "Setting config vars on Heroku..."
+    heroku.config_var.update(heroku_app, {
+      'ACME_CHALLENGES' => acme_challenges.to_json
+    })
+    puts "Done!"
 
-      # Get the domain name from Heroku
-      hostname = heroku.domain.list(heroku_app).first['hostname']
-      
-      # Wait at least a little bit, otherwise the first request will almost always fail.
-      sleep(2)
+    # Wait for app to come up
+    print "Testing filename works (to bring up app)..."
 
-      start_time = Time.now
+    # Get the domain name from Heroku
+    hostname = heroku.domain.list(heroku_app).first['hostname']
 
+    # Wait at least a little bit, otherwise the first request will almost always fail.
+    sleep(ENV.fetch("LETSENCRYPT_AUTO_RENEW_CHALLENGE_VERIFICATION_DELAY") { 2.seconds }.to_i)
+
+    start_time = Time.now
+
+    acme_challenges.each do |filename, value|
       begin
-        open("http://#{hostname}/#{challenge.filename}").read
+        open("http://#{hostname}/#{filename}").read
       rescue OpenURI::HTTPError, RuntimeError => e
         raise e if e.is_a?(RuntimeError) && !e.message.include?("redirection forbidden")
         if Time.now - start_time <= 60
@@ -69,7 +77,7 @@ namespace :letsencrypt do
           sleep(5)
           retry
         else
-          failure_message = "Error waiting for response from http://#{hostname}/#{challenge.filename}, Error: #{e.message}"
+          failure_message = "Error waiting for response from http://#{hostname}/#{filename}, Error: #{e.message}"
           raise Letsencrypt::Error::ChallengeUrlError, failure_message
         end
       end
@@ -78,12 +86,12 @@ namespace :letsencrypt do
 
       print "Giving LetsEncrypt some time to verify..."
       # Once you are ready to serve the confirmation request you can proceed.
-      challenge.request_verification # => true
-      challenge.verify_status # => 'pending'
+      challenges["#{filename}"].request_verification # => true
+      challenges["#{filename}"].verify_status # => 'pending'
 
       start_time = Time.now
 
-      while challenge.verify_status == 'pending'
+      while challenges["#{filename}"].verify_status == 'pending'
         if Time.now - start_time >= 30
           failure_message = "Failed - timed out waiting for challenge verification."
           raise Letsencrypt::Error::VerificationTimeoutError, failure_message
@@ -93,9 +101,9 @@ namespace :letsencrypt do
 
       puts "Done!"
 
-      unless challenge.verify_status == 'valid'
+      unless challenges["#{filename}"].verify_status == 'valid'
         puts "Problem verifying challenge."
-        failure_message = "Status: #{challenge.verify_status}, Error: #{challenge.error}"
+        failure_message = "Status: #{challenges["#{filename}"].verify_status}, Error: #{challenges["#{filename}"].error}"
         raise Letsencrypt::Error::VerificationError, failure_message
       end
 
@@ -105,8 +113,7 @@ namespace :letsencrypt do
     # Unset temporary config vars. We don't care about waiting for this to
     # restart
     heroku.config_var.update(heroku_app, {
-      'ACME_CHALLENGE_FILENAME' => nil,
-      'ACME_CHALLENGE_FILE_CONTENT' => nil
+      'ACME_CHALLENGES' => nil
     })
 
     # Create CSR
