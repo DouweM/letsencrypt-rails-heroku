@@ -60,7 +60,7 @@ namespace :letsencrypt do
     print "Testing filename works (to bring up app)..."
 
     # Get the domain name from Heroku
-    hostname = heroku.domain.list(heroku_app).first['hostname']
+    hostname = ENV['LETSENCRYPT_HOSTNAME'] || heroku.domain.list(heroku_app).first['hostname']
 
     # Wait at least a little bit, otherwise the first request will almost always fail.
     sleep(ENV.fetch("LETSENCRYPT_AUTO_RENEW_CHALLENGE_VERIFICATION_DELAY") { 2.seconds }.to_i)
